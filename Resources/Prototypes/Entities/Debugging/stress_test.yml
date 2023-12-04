@@ -5,8 +5,23 @@
   components:
   - type: Tag
     tags:
-      - Debug
+    - Debug
   - type: Sprite
     sprite: Effects/explosion.rsi
     state: explosion
   - type: StressTestMovement
+
+- type: entity
+  id: TestHorn
+  name: Test Horn
+  suffix: DEBUG
+  components:
+  - type: Tag
+    tags:
+    - Debug
+  - type: Sprite
+    sprite: Objects/Fun/bikehorn.rsi
+    state: icon
+  - type: Item
+    sprite: Objects/Fun/bikehorn.rsi
+  - type: TestHorn
