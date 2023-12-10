@@ -1,3 +1,5 @@
+using System.Collections;
+using Content.Shared.Atmos.Components;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Inventory;
 using Content.Shared.SubFloor;
@@ -44,11 +46,14 @@ public sealed class TrayScannerSystem : SharedTrayScannerSystem
         var range = 0f;
         HashSet<Entity<SubFloorHideComponent>> inRange;
         var scannerQuery = GetEntityQuery<TrayScannerComponent>();
+        TrayScannerComponent? foundTrayScanner = null;
 
         // TODO: Should probably sub to player attached changes / inventory changes but inventory's
         // API is extremely skrungly. If this ever shows up on dottrace ping me and laugh.
         var canSee = false;
 
+        // TODO (tgrkzus) - do we even care about having multiple t-rays? why not just find the first one?
+        // TODO (tgrkzus) -
         // TODO: Common iterator for both systems.
         if (_inventory.TryGetContainerSlotEnumerator(player.Value, out var enumerator))
         {
@@ -56,21 +61,22 @@ public sealed class TrayScannerSystem : SharedTrayScannerSystem
             {
                 foreach (var ent in slot.ContainedEntities)
                 {
-                    if (!scannerQuery.TryGetComponent(ent, out var sneakScanner) || !sneakScanner.Enabled)
+                    if (!scannerQuery.TryGetComponent(ent, out var maybeScanner) || !maybeScanner.Enabled)
                         continue;
-
+                    foundTrayScanner = maybeScanner;
                     canSee = true;
-                    range = MathF.Max(range, sneakScanner.Range);
+                    range = MathF.Max(range, maybeScanner.Range);
                 }
             }
         }
 
         foreach (var hand in _hands.EnumerateHands(player.Value))
         {
-            if (!scannerQuery.TryGetComponent(hand.HeldEntity, out var heldScanner) || !heldScanner.Enabled)
+            if (!scannerQuery.TryGetComponent(hand.HeldEntity, out var maybeScanner) || maybeScanner.Enabled)
                 continue;
 
-            range = MathF.Max(heldScanner.Range, range);
+            foundTrayScanner = maybeScanner;
+            range = MathF.Max(maybeScanner.Range, range);
             canSee = true;
         }
 
@@ -82,8 +88,12 @@ public sealed class TrayScannerSystem : SharedTrayScannerSystem
 
             foreach (var (uid, comp) in inRange)
             {
-                if (comp.IsUnderCover)
-                    EnsureComp<TrayRevealedComponent>(uid);
+                if (!comp.IsUnderCover || !MatchesFilter(foundTrayScanner!, uid))
+                {
+                    inRange.Remove((uid, comp));
+                    continue;
+                }
+                EnsureComp<TrayRevealedComponent>(uid);
             }
         }
 
@@ -168,5 +178,30 @@ public sealed class TrayScannerSystem : SharedTrayScannerSystem
     private void SetRevealed(EntityUid uid, bool value)
     {
         _appearance.SetData(uid, SubFloorVisuals.ScannerRevealed, value);
+    }
+
+    private bool MatchesFilter(TrayScannerComponent component, EntityUid target)
+    {
+        // TODO this should be determined via queries?
+        var metadata = EntityManager.GetComponent<MetaDataComponent>(target);
+        switch (component.Filter)
+        {
+            case TrayScannerFilter.ALL:
+                return true;
+            case TrayScannerFilter.GAS_PIPES:
+                return EntityManager.HasComponent<PipeAppearanceComponent>(target);
+            case TrayScannerFilter.CARGO_PIPES:
+                return metadata.EntityName.Contains("disposal");
+            case TrayScannerFilter.ALL_WIRES:
+                return metadata.EntityName.Contains("power cable");
+            case TrayScannerFilter.LV:
+                return metadata.EntityName.Contains("LV power cable");
+            case TrayScannerFilter.MV:
+                return metadata.EntityName.Contains("MV power cable");
+            case TrayScannerFilter.HV:
+                return metadata.EntityName.Contains("HV power cable");
+        }
+
+        return false;
     }
 }
